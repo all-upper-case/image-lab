@@ -16,10 +16,8 @@ This repo is intentionally separate from VeniceChat. The goal is a small, inspec
 - [x] Added SQLite history for runs and generated images.
 - [x] Added a basic async job system with polling.
 - [x] Added `.env.example` for API keys.
-- [ ] Import into Replit and install dependencies.
-- [ ] Add real API keys as Replit Secrets.
-- [ ] Run a first Venice.ai generation test.
-- [ ] Run a first Fal.ai generation test.
+- [x] Added Phase 2 gallery workflow basics: favorites, delete image/run, rerun, vary, load old run, download links, and metadata panels.
+- [ ] Test Phase 2 actions in Replit with real generated images.
 - [ ] Adjust model defaults after seeing which models you like best.
 
 ### Decisions already made
@@ -39,7 +37,7 @@ This repo is intentionally separate from VeniceChat. The goal is a small, inspec
 - Which models should appear at the top of the dropdown.
 - Whether to track estimated cost per generation.
 - Whether to add prompt enhancement using a text model.
-- Whether to support image editing/inpainting next, or gallery/search/favorites next.
+- Whether to support image editing/inpainting next, or model management/cost tracking next.
 - Whether to add a phone-friendly patch/fetch helper later, similar to VeniceChat, or keep this project simpler.
 
 ## Setup
@@ -97,19 +95,20 @@ For debugging, use one image at a time first. After a provider works, try 2 or 4
 - [x] Seed field
 - [x] SQLite run history
 - [x] Local image saving
-- [ ] Confirm Venice response parsing with a real call
-- [ ] Confirm Fal response parsing with a real call
+- [x] Confirmed by Josie: initial app is working in Replit
 - [ ] Add clearer provider-specific error messages if either API returns validation errors
 
 ### Phase 2 — Better gallery workflow
 
-- [ ] Favorite images
-- [ ] Delete images/runs
-- [ ] Rerun a previous prompt
-- [ ] Vary a previous run by clearing or changing the seed
-- [ ] Show full metadata in a collapsible panel
-- [ ] Copy prompt/settings from a previous run
-- [ ] Download individual images
+- [x] Favorite images
+- [x] Delete images/runs
+- [x] Rerun a previous prompt
+- [x] Vary a previous run by clearing the seed
+- [x] Show image metadata in a collapsible panel
+- [x] Show run settings in a collapsible panel
+- [x] Load/copy a previous run back into the form
+- [x] Download individual images
+- [ ] Test all Phase 2 actions in Replit
 - [ ] Batch-download a run as a ZIP
 
 ### Phase 3 — Model management
@@ -162,6 +161,7 @@ For debugging, use one image at a time first. After a provider works, try 2 or 4
 - Prefer small exact patches over broad rewrites.
 - Do not add chat/memory/summarization features unless there is a clear need.
 - When provider validation fails, save the raw error text in the run record so it can be debugged later.
+- Deleting images/runs removes the saved local generated file if it is under `static/generated/`.
 
 ## Known limitations of this starter version
 
