@@ -4,6 +4,7 @@ import os
 import traceback
 import uuid
 from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
 from threading import Lock
 from typing import Any
 
@@ -13,7 +14,18 @@ from flask import Flask, jsonify, render_template, request
 from providers.base import GenerationRequest, ProviderError
 from providers.fal_provider import FalProvider
 from providers.venice_provider import VeniceProvider
-from services.db import add_image, create_run, get_recent_runs, get_run, init_db, update_run_status
+from services.db import (
+    add_image,
+    create_run,
+    delete_image_record,
+    delete_run_record,
+    get_image,
+    get_recent_runs,
+    get_run,
+    init_db,
+    set_image_favorite,
+    update_run_status,
+)
 from services.image_store import ImageStore
 
 load_dotenv()
@@ -59,6 +71,70 @@ def parse_int_or_none(value: Any) -> int | None:
         return None
 
 
+def local_path_to_file(local_path: str | None) -> Path | None:
+    if not local_path:
+        return None
+    cleaned = local_path.lstrip("/")
+    path = Path(cleaned)
+    try:
+        path.relative_to(Path("static/generated"))
+    except ValueError:
+        return None
+    return path
+
+
+def remove_local_file(local_path: str | None) -> None:
+    path = local_path_to_file(local_path)
+    if path and path.exists() and path.is_file():
+        path.unlink()
+
+
+def build_generation_request(data: dict[str, Any]) -> GenerationRequest:
+    prompt = (data.get("prompt") or "").strip()
+    if not prompt:
+        raise ValueError("Prompt is required.")
+
+    provider = (data.get("provider") or "venice").strip().lower()
+    model = (data.get("model") or "").strip()
+    if not model:
+        raise ValueError("Model is required.")
+
+    return GenerationRequest(
+        provider=provider,
+        model=model,
+        prompt=prompt,
+        negative_prompt=(data.get("negative_prompt") or "").strip(),
+        count=parse_int_or_none(data.get("count")) or 1,
+        aspect_ratio=(data.get("aspect_ratio") or "1:1").strip(),
+        width=parse_int_or_none(data.get("width")),
+        height=parse_int_or_none(data.get("height")),
+        seed=parse_int_or_none(data.get("seed")),
+        output_format=(data.get("output_format") or "jpeg").strip().lower(),
+        safety=bool(data.get("safety", True)),
+        raw_settings=data.get("raw_settings") or {},
+    )
+
+
+def enqueue_generation(data: dict[str, Any]) -> dict[str, str]:
+    generation_request = build_generation_request(data)
+    run_id = uuid.uuid4().hex[:12]
+
+    create_run(
+        run_id=run_id,
+        provider=generation_request.provider,
+        model=generation_request.model,
+        prompt=generation_request.prompt,
+        negative_prompt=generation_request.negative_prompt,
+        settings=data,
+    )
+
+    with jobs_lock:
+        jobs[run_id] = {"id": run_id, "status": "queued", "error": None}
+
+    executor.submit(run_generation_job, run_id, generation_request)
+    return {"job_id": run_id, "run_id": run_id, "status": "queued"}
+
+
 @app.route("/")
 def index():
     return render_template("index.html")
@@ -95,45 +171,76 @@ def api_run(run_id: str):
 @app.post("/api/generate")
 def api_generate():
     data = request.get_json(silent=True) or {}
-    prompt = (data.get("prompt") or "").strip()
-    if not prompt:
-        return jsonify({"error": "Prompt is required."}), 400
+    try:
+        queued = enqueue_generation(data)
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    return jsonify(queued)
 
-    provider = (data.get("provider") or "venice").strip().lower()
-    model = (data.get("model") or "").strip()
-    if not model:
-        return jsonify({"error": "Model is required."}), 400
 
-    run_id = uuid.uuid4().hex[:12]
-    generation_request = GenerationRequest(
-        provider=provider,
-        model=model,
-        prompt=prompt,
-        negative_prompt=(data.get("negative_prompt") or "").strip(),
-        count=parse_int_or_none(data.get("count")) or 1,
-        aspect_ratio=(data.get("aspect_ratio") or "1:1").strip(),
-        width=parse_int_or_none(data.get("width")),
-        height=parse_int_or_none(data.get("height")),
-        seed=parse_int_or_none(data.get("seed")),
-        output_format=(data.get("output_format") or "jpeg").strip().lower(),
-        safety=bool(data.get("safety", True)),
-        raw_settings=data.get("raw_settings") or {},
+@app.post("/api/runs/<run_id>/rerun")
+def api_rerun(run_id: str):
+    run = get_run(run_id)
+    if not run:
+        return jsonify({"error": "Run not found."}), 404
+
+    data = dict(run["settings"] or {})
+    data.update(
+        {
+            "provider": run["provider"],
+            "model": run["model"],
+            "prompt": run["prompt"],
+            "negative_prompt": run["negative_prompt"],
+        }
     )
 
-    create_run(
-        run_id=run_id,
-        provider=provider,
-        model=model,
-        prompt=generation_request.prompt,
-        negative_prompt=generation_request.negative_prompt,
-        settings=data,
-    )
+    options = request.get_json(silent=True) or {}
+    if options.get("vary"):
+        data["seed"] = None
 
+    try:
+        queued = enqueue_generation(data)
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    return jsonify(queued)
+
+
+@app.delete("/api/runs/<run_id>")
+def api_delete_run(run_id: str):
+    run = get_run(run_id)
+    if not run:
+        return jsonify({"error": "Run not found."}), 404
+
+    for image in run["images"]:
+        remove_local_file(image["local_path"])
+
+    delete_run_record(run_id)
     with jobs_lock:
-        jobs[run_id] = {"id": run_id, "status": "queued", "error": None}
+        jobs.pop(run_id, None)
+    return jsonify({"ok": True})
 
-    executor.submit(run_generation_job, run_id, generation_request)
-    return jsonify({"job_id": run_id, "run_id": run_id, "status": "queued"})
+
+@app.post("/api/images/<int:image_id>/favorite")
+def api_favorite_image(image_id: int):
+    image = get_image(image_id)
+    if not image:
+        return jsonify({"error": "Image not found."}), 404
+
+    data = request.get_json(silent=True) or {}
+    favorite = bool(data.get("favorite", not image["favorite"]))
+    set_image_favorite(image_id, favorite)
+    return jsonify({"ok": True, "favorite": favorite})
+
+
+@app.delete("/api/images/<int:image_id>")
+def api_delete_image(image_id: int):
+    image = get_image(image_id)
+    if not image:
+        return jsonify({"error": "Image not found."}), 404
+
+    remove_local_file(image["local_path"])
+    delete_image_record(image_id)
+    return jsonify({"ok": True})
 
 
 @app.get("/api/jobs/<job_id>")
