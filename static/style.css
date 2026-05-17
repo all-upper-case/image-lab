@@ -123,6 +123,10 @@ button:disabled {
   opacity: 0.6;
 }
 
+a {
+  color: inherit;
+}
+
 .secondary-button {
   background: var(--panel-2);
   color: var(--text);
@@ -232,6 +236,59 @@ button:disabled {
   height: 74px;
   object-fit: cover;
   border-radius: 10px;
+}
+
+.button-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  margin-top: 0.75rem;
+}
+
+.small-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 34px;
+  padding: 0.45rem 0.65rem;
+  border-radius: 9px;
+  border: 1px solid var(--border);
+  background: #101825;
+  color: var(--text);
+  font-size: 0.82rem;
+  font-weight: 650;
+  text-decoration: none;
+}
+
+button.small-button {
+  color: var(--text);
+}
+
+.danger-button {
+  color: var(--danger) !important;
+}
+
+.metadata-box {
+  margin-top: 0.75rem;
+  border-top: 1px solid var(--border);
+  padding-top: 0.65rem;
+}
+
+.metadata-box summary {
+  cursor: pointer;
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.metadata-box pre {
+  white-space: pre-wrap;
+  overflow-x: auto;
+  font-size: 0.76rem;
+  line-height: 1.35;
+  background: #0f1520;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 0.75rem;
 }
 
 .empty {
