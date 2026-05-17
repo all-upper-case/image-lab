@@ -16,6 +16,7 @@ env/
 # App data and generated output
 data/*.db
 data/*.sqlite
+data/model_cache.json
 static/generated/*
 !static/generated/.gitkeep
 
