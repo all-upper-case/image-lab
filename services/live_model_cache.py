@@ -79,7 +79,7 @@ def refresh_fal_pricing(cache: dict[str, Any], fal_models: list[dict[str, Any]])
                 result["errors"].append(f"{model_id}: HTTP {response.status_code}: {response.text[:300]}")
                 continue
             data = response.json()
-            pricing = normalize_fal_pricing(data)
+            pricing = normalize_fal_pricing(data, model_id)
             fal_cache[model_id] = {
                 "id": model_id,
                 "pricing": pricing,
@@ -95,10 +95,15 @@ def refresh_fal_pricing(cache: dict[str, Any], fal_models: list[dict[str, Any]])
     return result
 
 
-def normalize_fal_pricing(data: dict[str, Any]) -> dict[str, Any]:
-    unit_price = data.get("unit_price") or data.get("price") or data.get("price_per_unit")
-    unit = data.get("unit") or data.get("billing_unit") or "unknown"
-    currency = data.get("currency") or "USD"
+def normalize_fal_pricing(data: dict[str, Any], endpoint_id: str) -> dict[str, Any]:
+    price_item = data
+    prices = data.get("prices")
+    if isinstance(prices, list) and prices:
+        price_item = next((item for item in prices if item.get("endpoint_id") == endpoint_id), prices[0])
+
+    unit_price = price_item.get("unit_price") or price_item.get("price") or price_item.get("price_per_unit")
+    unit = price_item.get("unit") or price_item.get("billing_unit") or "unknown"
+    currency = price_item.get("currency") or "USD"
 
     normalized: dict[str, Any] = {
         "unit": normalize_unit_name(str(unit)),
@@ -143,17 +148,18 @@ def refresh_venice_models(cache: dict[str, Any]) -> dict[str, Any]:
         data = response.json()
         models = extract_venice_model_list(data)
         for model in models:
-            model_id = model.get("id") or model.get("model") or model.get("name")
+            spec = model.get("model_spec") or {}
+            model_id = model.get("id") or model.get("model") or spec.get("id") or spec.get("name")
             if not model_id:
                 continue
             venice_cache[model_id] = {
                 "id": model_id,
-                "label": model.get("name") or model.get("display_name") or model_id,
-                "description": model.get("description"),
-                "traits": model.get("traits"),
-                "capabilities": model.get("capabilities"),
-                "constraints": model.get("constraints"),
-                "pricing": normalize_venice_pricing(model.get("pricing")),
+                "label": spec.get("name") or model.get("name") or model.get("display_name") or model_id,
+                "description": spec.get("description") or model.get("description"),
+                "traits": spec.get("traits") or model.get("traits"),
+                "capabilities": spec.get("capabilities") or model.get("capabilities"),
+                "constraints": spec.get("constraints") or model.get("constraints"),
+                "pricing": normalize_venice_pricing(spec.get("pricing") or model.get("pricing")),
                 "raw_model": model,
                 "last_refreshed_at": utc_now(),
                 "source": "venice /api/v1/models?type=image",
