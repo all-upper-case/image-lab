@@ -22,6 +22,7 @@ const els = {
 
 let modelCatalog = {};
 let pollTimer = null;
+let currentRunData = null;
 
 function escapeHtml(value) {
   return String(value ?? '')
@@ -89,8 +90,37 @@ function payloadFromForm() {
   };
 }
 
+function fillFormFromRun(run, options = {}) {
+  els.provider.value = run.provider || 'venice';
+  updateModelDropdown();
+
+  const modelExists = Array.from(els.model.options).some(option => option.value === run.model);
+  if (modelExists) {
+    els.model.value = run.model;
+    els.customModel.value = '';
+  } else {
+    els.customModel.value = run.model || '';
+  }
+
+  const settings = run.settings || {};
+  els.prompt.value = run.prompt || settings.prompt || '';
+  els.negativePrompt.value = run.negative_prompt || settings.negative_prompt || '';
+  els.count.value = String(settings.count || 1);
+  els.aspectRatio.value = settings.aspect_ratio || '1:1';
+  els.outputFormat.value = settings.output_format || 'jpeg';
+  els.width.value = settings.width || '';
+  els.height.value = settings.height || '';
+  els.seed.value = options.clearSeed ? '' : (settings.seed || '');
+  els.safety.checked = settings.safety !== false;
+}
+
 async function submitGeneration(event) {
   event.preventDefault();
+  const payload = payloadFromForm();
+  await enqueueGeneration('/api/generate', payload);
+}
+
+async function enqueueGeneration(url, payload) {
   clearInterval(pollTimer);
   setBusy(true);
   els.jobStatus.textContent = 'Queued';
@@ -99,10 +129,10 @@ async function submitGeneration(event) {
   els.currentRun.textContent = 'Waiting for provider response…';
 
   try {
-    const data = await fetchJson('/api/generate', {
+    const data = await fetchJson(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payloadFromForm()),
+      body: JSON.stringify(payload || {}),
     });
     pollJob(data.job_id);
   } catch (error) {
@@ -147,26 +177,40 @@ function pollJob(jobId) {
 }
 
 function renderCurrentRun(run) {
+  currentRunData = run;
   if (!run || !run.images?.length) {
     els.currentRun.className = 'image-grid empty';
     els.currentRun.textContent = 'No images saved for this run.';
     return;
   }
   els.currentRun.className = 'image-grid';
-  els.currentRun.innerHTML = run.images.map(imageCardHtml).join('');
+  els.currentRun.innerHTML = run.images.map(image => imageCardHtml(image, run)).join('');
 }
 
-function imageCardHtml(image) {
+function imageCardHtml(image, run) {
+  const dimensions = image.width && image.height ? `${escapeHtml(image.width)} × ${escapeHtml(image.height)}` : 'Saved locally';
+  const metadata = escapeHtml(JSON.stringify(image.metadata || {}, null, 2));
+  const favoriteLabel = image.favorite ? '★ Favorited' : '☆ Favorite';
+
   return `
-    <article class="image-card">
+    <article class="image-card" data-image-id="${escapeHtml(image.id)}">
       <a href="${escapeHtml(image.local_path)}" target="_blank" rel="noreferrer">
         <img src="${escapeHtml(image.local_path)}" alt="Generated image">
       </a>
       <div class="image-card-body">
         <div class="meta">
           ${image.seed ? `Seed: ${escapeHtml(image.seed)}<br>` : ''}
-          ${image.width && image.height ? `${escapeHtml(image.width)} × ${escapeHtml(image.height)}` : 'Saved locally'}
+          ${dimensions}
         </div>
+        <div class="button-row">
+          <a class="small-button" href="${escapeHtml(image.local_path)}" download>Download</a>
+          <button class="small-button" type="button" data-action="favorite-image" data-image-id="${escapeHtml(image.id)}" data-favorite="${image.favorite ? '0' : '1'}">${favoriteLabel}</button>
+          <button class="small-button danger-button" type="button" data-action="delete-image" data-image-id="${escapeHtml(image.id)}">Delete</button>
+        </div>
+        <details class="metadata-box">
+          <summary>Metadata</summary>
+          <pre>${metadata}</pre>
+        </details>
       </div>
     </article>
   `;
@@ -191,21 +235,108 @@ async function loadHistory() {
 
 function runCardHtml(run) {
   const thumbs = (run.images || []).slice(0, 5).map(image => `<img src="${escapeHtml(image.local_path)}" alt="Generated thumbnail">`).join('');
+  const runJson = escapeHtml(JSON.stringify(run));
   return `
-    <article class="run-card">
+    <article class="run-card" data-run-id="${escapeHtml(run.id)}">
       ${thumbs ? `<div class="run-thumbs">${thumbs}</div>` : ''}
       <div class="run-card-body">
         <div class="meta">${escapeHtml(run.provider)} · ${escapeHtml(run.model)} · ${escapeHtml(run.status)} · ${escapeHtml(run.created_at)}</div>
         <p class="prompt-preview">${escapeHtml(run.prompt)}</p>
         ${run.error ? `<div class="error">${escapeHtml(run.error)}</div>` : ''}
+        <div class="button-row">
+          <button class="small-button" type="button" data-action="load-run" data-run="${runJson}">Load</button>
+          <button class="small-button" type="button" data-action="rerun" data-run-id="${escapeHtml(run.id)}">Rerun</button>
+          <button class="small-button" type="button" data-action="vary" data-run-id="${escapeHtml(run.id)}">Vary</button>
+          <button class="small-button danger-button" type="button" data-action="delete-run" data-run-id="${escapeHtml(run.id)}">Delete</button>
+        </div>
+        <details class="metadata-box">
+          <summary>Run settings</summary>
+          <pre>${escapeHtml(JSON.stringify(run.settings || {}, null, 2))}</pre>
+        </details>
       </div>
     </article>
   `;
 }
 
+async function handleDocumentClick(event) {
+  const target = event.target.closest('[data-action]');
+  if (!target) {
+    return;
+  }
+
+  const action = target.dataset.action;
+
+  try {
+    if (action === 'favorite-image') {
+      const imageId = target.dataset.imageId;
+      const favorite = target.dataset.favorite === '1';
+      await fetchJson(`/api/images/${imageId}/favorite`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ favorite }),
+      });
+      await refreshVisibleRun();
+      await loadHistory();
+    }
+
+    if (action === 'delete-image') {
+      const imageId = target.dataset.imageId;
+      if (!confirm('Delete this image from the app and local generated files?')) {
+        return;
+      }
+      await fetchJson(`/api/images/${imageId}`, { method: 'DELETE' });
+      await refreshVisibleRun();
+      await loadHistory();
+    }
+
+    if (action === 'delete-run') {
+      const runId = target.dataset.runId;
+      if (!confirm('Delete this whole run and its generated image files?')) {
+        return;
+      }
+      await fetchJson(`/api/runs/${runId}`, { method: 'DELETE' });
+      if (currentRunData?.id === runId) {
+        currentRunData = null;
+        els.currentRun.className = 'image-grid empty';
+        els.currentRun.textContent = 'Deleted current run.';
+      }
+      await loadHistory();
+    }
+
+    if (action === 'rerun') {
+      const runId = target.dataset.runId;
+      await enqueueGeneration(`/api/runs/${runId}/rerun`, { vary: false });
+    }
+
+    if (action === 'vary') {
+      const runId = target.dataset.runId;
+      await enqueueGeneration(`/api/runs/${runId}/rerun`, { vary: true });
+    }
+
+    if (action === 'load-run') {
+      const run = JSON.parse(target.dataset.run);
+      fillFormFromRun(run);
+      renderCurrentRun(run);
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+  } catch (error) {
+    alert(error.message);
+  }
+}
+
+async function refreshVisibleRun() {
+  if (!currentRunData?.id) {
+    return;
+  }
+
+  const data = await fetchJson(`/api/runs/${currentRunData.id}`);
+  renderCurrentRun(data.run);
+}
+
 els.provider.addEventListener('change', updateModelDropdown);
 els.form.addEventListener('submit', submitGeneration);
 els.refreshHistory.addEventListener('click', loadHistory);
+document.addEventListener('click', handleDocumentClick);
 
 Promise.all([loadProviders(), loadModels(), loadHistory()]).catch(error => {
   els.providerStatus.textContent = error.message;
