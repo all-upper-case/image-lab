@@ -27,7 +27,8 @@ from services.db import (
     update_run_status,
 )
 from services.image_store import ImageStore
-from services.model_catalog import estimate_generation_cost, get_model_catalog
+from services.live_model_cache import get_model_cache_summary, refresh_model_cache
+from services.model_catalog import MODEL_CATALOG, estimate_generation_cost, get_model_catalog
 
 load_dotenv()
 
@@ -145,6 +146,16 @@ def api_providers():
 def api_models():
     include_disabled = request.args.get("include_disabled") == "1"
     return jsonify(get_model_catalog(include_disabled=include_disabled))
+
+
+@app.get("/api/models/cache")
+def api_model_cache_summary():
+    return jsonify(get_model_cache_summary())
+
+
+@app.post("/api/models/refresh")
+def api_refresh_models():
+    return jsonify(refresh_model_cache(MODEL_CATALOG))
 
 
 @app.post("/api/estimate")
