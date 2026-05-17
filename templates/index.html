@@ -43,6 +43,9 @@
           </label>
         </div>
 
+        <section id="model-info" class="info-card">Choose a model to see notes and pricing.</section>
+        <section id="cost-estimate" class="info-card muted-card">Cost estimate will appear here.</section>
+
         <details class="custom-model-box">
           <summary>Use custom model ID</summary>
           <label>
@@ -69,9 +72,23 @@
               <option value="9:16">9:16 portrait</option>
               <option value="4:3">4:3 landscape</option>
               <option value="3:4">3:4 portrait</option>
+              <option value="3:2">3:2 landscape</option>
+              <option value="2:3">2:3 portrait</option>
             </select>
           </label>
 
+          <label>
+            Resolution tier
+            <select id="resolution" name="resolution">
+              <option value="">Auto / model default</option>
+              <option value="1K">1K</option>
+              <option value="2K">2K</option>
+              <option value="4K">4K</option>
+            </select>
+          </label>
+        </div>
+
+        <div class="grid three">
           <label>
             Format
             <select id="output_format" name="output_format">
@@ -80,9 +97,7 @@
               <option value="webp">WebP</option>
             </select>
           </label>
-        </div>
 
-        <div class="grid three">
           <label>
             Width
             <input id="width" name="width" type="number" min="64" step="8" placeholder="optional">
@@ -92,12 +107,12 @@
             Height
             <input id="height" name="height" type="number" min="64" step="8" placeholder="optional">
           </label>
-
-          <label>
-            Seed
-            <input id="seed" name="seed" type="number" placeholder="random">
-          </label>
         </div>
+
+        <label>
+          Seed
+          <input id="seed" name="seed" type="number" placeholder="random">
+        </label>
 
         <label class="checkbox-row">
           <input id="safety" name="safety" type="checkbox" checked>
