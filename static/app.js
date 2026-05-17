@@ -5,6 +5,8 @@ const els = {
   customModel: document.getElementById('custom_model'),
   modelInfo: document.getElementById('model-info'),
   costEstimate: document.getElementById('cost-estimate'),
+  refreshModels: document.getElementById('refresh-models'),
+  modelCacheStatus: document.getElementById('model-cache-status'),
   prompt: document.getElementById('prompt'),
   negativePrompt: document.getElementById('negative_prompt'),
   count: document.getElementById('count'),
@@ -76,10 +78,14 @@ function pricingText(model) {
 
 function updateModelDropdown() {
   const provider = els.provider.value;
+  const previous = els.model.value;
   const models = modelCatalog[provider] || [];
   els.model.innerHTML = models
     .map(model => `<option value="${escapeHtml(model.id)}">${escapeHtml(model.label || model.id)}</option>`)
     .join('');
+  if (previous && Array.from(els.model.options).some(option => option.value === previous)) {
+    els.model.value = previous;
+  }
   updateModelInfo();
   scheduleEstimate();
 }
@@ -97,6 +103,9 @@ function updateModelInfo() {
   const resolutionNote = model.supported_resolutions?.length
     ? `<div class="pill-row">${model.supported_resolutions.map(value => `<span class="pill">${escapeHtml(value)}</span>`).join('')}</div>`
     : '';
+  const liveNote = model.live_cache?.last_refreshed_at
+    ? `<div class="meta">Live cache: ${escapeHtml(model.live_cache.last_refreshed_at)}</div>`
+    : '';
 
   els.modelInfo.innerHTML = `
     <strong>${escapeHtml(model.label || model.id)}</strong>
@@ -104,6 +113,7 @@ function updateModelInfo() {
     <p>${escapeHtml(model.notes || 'No extra notes recorded yet.')}</p>
     <p>${escapeHtml(pricingText(model))}</p>
     ${resolutionNote}
+    ${liveNote}
   `;
 }
 
@@ -144,6 +154,38 @@ async function loadProviders() {
     return `${name}: ${status}`;
   });
   els.providerStatus.textContent = parts.join(' · ');
+}
+
+async function loadModelCacheStatus() {
+  try {
+    const data = await fetchJson('/api/models/cache');
+    const refreshed = data.last_refreshed_at ? `Last refreshed: ${data.last_refreshed_at}` : 'No live refresh saved yet.';
+    els.modelCacheStatus.textContent = `${refreshed} Fal: ${data.fal_model_count || 0}, Venice: ${data.venice_model_count || 0}`;
+  } catch (error) {
+    els.modelCacheStatus.textContent = `Cache status unavailable: ${error.message}`;
+  }
+}
+
+async function refreshModelPricing() {
+  els.refreshModels.disabled = true;
+  els.refreshModels.textContent = 'Refreshing…';
+  els.modelCacheStatus.textContent = 'Fetching live provider metadata and pricing…';
+
+  try {
+    const data = await fetchJson('/api/models/refresh', { method: 'POST' });
+    const fal = data.results?.fal;
+    const venice = data.results?.venice;
+    const errors = [...(fal?.errors || []), ...(venice?.errors || [])];
+    const summary = `Updated Fal: ${fal?.updated || 0}, Venice: ${venice?.updated || 0}`;
+    els.modelCacheStatus.textContent = errors.length ? `${summary}. ${errors.length} warning(s); see model_cache.json.` : summary;
+    await loadModels();
+    await loadModelCacheStatus();
+  } catch (error) {
+    els.modelCacheStatus.textContent = `Refresh failed: ${error.message}`;
+  } finally {
+    els.refreshModels.disabled = false;
+    els.refreshModels.textContent = 'Refresh model/pricing data';
+  }
 }
 
 async function loadModels() {
@@ -431,9 +473,10 @@ async function refreshVisibleRun() {
 els.provider.addEventListener('change', updateModelDropdown);
 els.form.addEventListener('submit', submitGeneration);
 els.refreshHistory.addEventListener('click', loadHistory);
+els.refreshModels.addEventListener('click', refreshModelPricing);
 document.addEventListener('click', handleDocumentClick);
 
-Promise.all([loadProviders(), loadModels(), loadHistory()]).catch(error => {
+Promise.all([loadProviders(), loadModels(), loadModelCacheStatus(), loadHistory()]).catch(error => {
   els.providerStatus.textContent = error.message;
   els.providerStatus.className = 'provider-status error';
 });
