@@ -3,10 +3,13 @@ const els = {
   provider: document.getElementById('provider'),
   model: document.getElementById('model'),
   customModel: document.getElementById('custom_model'),
+  modelInfo: document.getElementById('model-info'),
+  costEstimate: document.getElementById('cost-estimate'),
   prompt: document.getElementById('prompt'),
   negativePrompt: document.getElementById('negative_prompt'),
   count: document.getElementById('count'),
   aspectRatio: document.getElementById('aspect_ratio'),
+  resolution: document.getElementById('resolution'),
   outputFormat: document.getElementById('output_format'),
   width: document.getElementById('width'),
   height: document.getElementById('height'),
@@ -22,6 +25,7 @@ const els = {
 
 let modelCatalog = {};
 let pollTimer = null;
+let estimateTimer = null;
 let currentRunData = null;
 
 function escapeHtml(value) {
@@ -47,12 +51,90 @@ function selectedModel() {
   return custom || els.model.value;
 }
 
+function selectedModelInfo() {
+  const provider = els.provider.value;
+  const modelId = selectedModel();
+  return (modelCatalog[provider] || []).find(model => model.id === modelId) || null;
+}
+
+function pricingText(model) {
+  if (!model?.pricing) {
+    return 'Pricing: unknown';
+  }
+  const pricing = model.pricing;
+  if (pricing.unit === 'image' && pricing.usd != null) {
+    return `Pricing: about $${Number(pricing.usd).toFixed(4)} per image`;
+  }
+  if (pricing.unit === 'megapixel_rounded_up' && pricing.usd != null) {
+    return `Pricing: about $${Number(pricing.usd).toFixed(4)} per rounded-up megapixel`;
+  }
+  if (pricing.unit === 'range' && pricing.min_usd != null && pricing.max_usd != null) {
+    return `Pricing: about $${Number(pricing.min_usd).toFixed(2)}–$${Number(pricing.max_usd).toFixed(2)} per image depending on quality/resolution`;
+  }
+  return `Pricing: unknown${pricing.source ? ` (${pricing.source})` : ''}`;
+}
+
 function updateModelDropdown() {
   const provider = els.provider.value;
   const models = modelCatalog[provider] || [];
   els.model.innerHTML = models
     .map(model => `<option value="${escapeHtml(model.id)}">${escapeHtml(model.label || model.id)}</option>`)
     .join('');
+  updateModelInfo();
+  scheduleEstimate();
+}
+
+function updateModelInfo() {
+  const model = selectedModelInfo();
+  if (!model) {
+    els.modelInfo.innerHTML = `
+      <strong>Custom model</strong>
+      <p>No catalog metadata is available for this model yet. Generation may still work if the provider accepts the model ID and the current request shape.</p>
+    `;
+    return;
+  }
+
+  const resolutionNote = model.supported_resolutions?.length
+    ? `<div class="pill-row">${model.supported_resolutions.map(value => `<span class="pill">${escapeHtml(value)}</span>`).join('')}</div>`
+    : '';
+
+  els.modelInfo.innerHTML = `
+    <strong>${escapeHtml(model.label || model.id)}</strong>
+    <div class="meta">${escapeHtml(model.id)} · ${escapeHtml(model.category || 'model')} · ${escapeHtml(model.sizing_mode || model.fal_payload_style || 'default sizing')}</div>
+    <p>${escapeHtml(model.notes || 'No extra notes recorded yet.')}</p>
+    <p>${escapeHtml(pricingText(model))}</p>
+    ${resolutionNote}
+  `;
+}
+
+async function updateCostEstimate() {
+  const payload = payloadFromForm();
+  if (!payload.model) {
+    els.costEstimate.textContent = 'Choose a model to estimate cost.';
+    return;
+  }
+
+  try {
+    const data = await fetchJson('/api/estimate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    const estimate = data.estimate;
+    const mp = estimate.estimated_megapixels ? `Estimated size basis: ${Number(estimate.estimated_megapixels).toFixed(2)} MP.` : '';
+    els.costEstimate.innerHTML = `
+      <strong>${escapeHtml(estimate.label || 'Cost unknown')}</strong>
+      <p>${escapeHtml(estimate.detail || '')}</p>
+      ${mp ? `<div class="meta">${escapeHtml(mp)}</div>` : ''}
+    `;
+  } catch (error) {
+    els.costEstimate.textContent = `Could not estimate cost: ${error.message}`;
+  }
+}
+
+function scheduleEstimate() {
+  clearTimeout(estimateTimer);
+  estimateTimer = setTimeout(updateCostEstimate, 250);
 }
 
 async function loadProviders() {
@@ -82,6 +164,7 @@ function payloadFromForm() {
     negative_prompt: els.negativePrompt.value.trim(),
     count: Number(els.count.value || 1),
     aspect_ratio: els.aspectRatio.value,
+    resolution: els.resolution.value || null,
     output_format: els.outputFormat.value,
     width: els.width.value ? Number(els.width.value) : null,
     height: els.height.value ? Number(els.height.value) : null,
@@ -107,11 +190,14 @@ function fillFormFromRun(run, options = {}) {
   els.negativePrompt.value = run.negative_prompt || settings.negative_prompt || '';
   els.count.value = String(settings.count || 1);
   els.aspectRatio.value = settings.aspect_ratio || '1:1';
+  els.resolution.value = settings.resolution || '';
   els.outputFormat.value = settings.output_format || 'jpeg';
   els.width.value = settings.width || '';
   els.height.value = settings.height || '';
   els.seed.value = options.clearSeed ? '' : (settings.seed || '');
   els.safety.checked = settings.safety !== false;
+  updateModelInfo();
+  scheduleEstimate();
 }
 
 async function submitGeneration(event) {
@@ -332,6 +418,15 @@ async function refreshVisibleRun() {
   const data = await fetchJson(`/api/runs/${currentRunData.id}`);
   renderCurrentRun(data.run);
 }
+
+['change', 'input'].forEach(eventName => {
+  [els.model, els.customModel, els.count, els.aspectRatio, els.resolution, els.outputFormat, els.width, els.height].forEach(element => {
+    element.addEventListener(eventName, () => {
+      updateModelInfo();
+      scheduleEstimate();
+    });
+  });
+});
 
 els.provider.addEventListener('change', updateModelDropdown);
 els.form.addEventListener('submit', submitGeneration);
