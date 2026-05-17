@@ -7,6 +7,7 @@ from typing import Any
 import requests
 
 from providers.base import GeneratedImage, GenerationRequest, GenerationResult, ProviderError
+from services.model_catalog import ASPECT_PIXELS_1MP, get_model_info
 
 VENICE_IMAGE_GENERATE_URL = "https://api.venice.ai/api/v1/image/generate"
 BASE64_RE = re.compile(r"^[A-Za-z0-9+/=\s]+$")
@@ -83,6 +84,9 @@ class VeniceProvider:
         if not self.api_key:
             raise ProviderError("VENICE_API_KEY is not set.")
 
+        model_info = get_model_info("venice", request.model) or {}
+        sizing_mode = model_info.get("sizing_mode", "mixed")
+
         payload: dict[str, Any] = {
             "model": request.model,
             "prompt": request.prompt,
@@ -96,14 +100,24 @@ class VeniceProvider:
             payload["negative_prompt"] = request.negative_prompt
         if request.seed is not None:
             payload["seed"] = request.seed
-        if request.width and request.height:
+
+        resolution = request.raw_settings.get("resolution")
+        if sizing_mode == "resolution_tier":
+            payload["aspect_ratio"] = request.aspect_ratio or "1:1"
+            if resolution:
+                payload["resolution"] = resolution
+        elif request.width and request.height:
             payload["width"] = request.width
             payload["height"] = request.height
+        elif sizing_mode == "pixel":
+            width, height = ASPECT_PIXELS_1MP.get(request.aspect_ratio, ASPECT_PIXELS_1MP["1:1"])
+            payload["width"] = width
+            payload["height"] = height
         elif request.aspect_ratio:
             payload["aspect_ratio"] = request.aspect_ratio
 
         # Allow advanced fields later without changing the UI first.
-        for key in ("cfg_scale", "steps", "style_preset", "resolution", "lora_strength"):
+        for key in ("cfg_scale", "steps", "style_preset", "lora_strength"):
             if key in request.raw_settings and request.raw_settings[key] not in (None, ""):
                 payload[key] = request.raw_settings[key]
 
