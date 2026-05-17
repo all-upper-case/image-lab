@@ -103,6 +103,14 @@ def get_run(run_id: str) -> dict[str, Any] | None:
         return _shape_run(run, images)
 
 
+def get_image(image_id: int) -> dict[str, Any] | None:
+    with get_conn() as conn:
+        image = conn.execute("SELECT * FROM images WHERE id = ?", (image_id,)).fetchone()
+        if not image:
+            return None
+        return _shape_image(image)
+
+
 def get_recent_runs(limit: int = 30) -> list[dict[str, Any]]:
     with get_conn() as conn:
         runs = conn.execute("SELECT * FROM runs ORDER BY created_at DESC LIMIT ?", (limit,)).fetchall()
@@ -111,6 +119,22 @@ def get_recent_runs(limit: int = 30) -> list[dict[str, Any]]:
             images = conn.execute("SELECT * FROM images WHERE run_id = ? ORDER BY id", (run["id"],)).fetchall()
             shaped.append(_shape_run(run, images))
         return shaped
+
+
+def set_image_favorite(image_id: int, favorite: bool) -> None:
+    with get_conn() as conn:
+        conn.execute("UPDATE images SET favorite = ? WHERE id = ?", (1 if favorite else 0, image_id))
+
+
+def delete_image_record(image_id: int) -> None:
+    with get_conn() as conn:
+        conn.execute("DELETE FROM images WHERE id = ?", (image_id,))
+
+
+def delete_run_record(run_id: str) -> None:
+    with get_conn() as conn:
+        conn.execute("DELETE FROM images WHERE run_id = ?", (run_id,))
+        conn.execute("DELETE FROM runs WHERE id = ?", (run_id,))
 
 
 def _shape_run(run: sqlite3.Row, images: list[sqlite3.Row]) -> dict[str, Any]:
@@ -125,18 +149,20 @@ def _shape_run(run: sqlite3.Row, images: list[sqlite3.Row]) -> dict[str, Any]:
         "error": run["error"],
         "created_at": run["created_at"],
         "completed_at": run["completed_at"],
-        "images": [
-            {
-                "id": image["id"],
-                "local_path": image["local_path"],
-                "provider_image_url": image["provider_image_url"],
-                "width": image["width"],
-                "height": image["height"],
-                "seed": image["seed"],
-                "metadata": json.loads(image["metadata_json"] or "{}"),
-                "favorite": bool(image["favorite"]),
-                "created_at": image["created_at"],
-            }
-            for image in images
-        ],
+        "images": [_shape_image(image) for image in images],
+    }
+
+
+def _shape_image(image: sqlite3.Row) -> dict[str, Any]:
+    return {
+        "id": image["id"],
+        "run_id": image["run_id"],
+        "local_path": image["local_path"],
+        "provider_image_url": image["provider_image_url"],
+        "width": image["width"],
+        "height": image["height"],
+        "seed": image["seed"],
+        "metadata": json.loads(image["metadata_json"] or "{}"),
+        "favorite": bool(image["favorite"]),
+        "created_at": image["created_at"],
     }
