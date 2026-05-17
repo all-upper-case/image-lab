@@ -1,0 +1,39 @@
+.info-card {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 0.75rem;
+  background: rgba(255, 255, 255, 0.02);
+  font-size: 0.86rem;
+  line-height: 1.4;
+}
+
+.info-card strong {
+  display: block;
+  margin-bottom: 0.35rem;
+}
+
+.info-card p {
+  margin: 0.45rem 0 0;
+  color: var(--muted);
+}
+
+.muted-card {
+  background: #101825;
+}
+
+.pill-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin-top: 0.6rem;
+}
+
+.pill {
+  display: inline-flex;
+  padding: 0.25rem 0.45rem;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  color: var(--text);
+  background: #0f1520;
+  font-size: 0.76rem;
+}
