@@ -1,0 +1,29 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+.venv/
+venv/
+env/
+
+# Local secrets
+.env
+.env.*
+!.env.example
+
+# App data and generated output
+data/*.db
+data/*.sqlite
+static/generated/*
+!static/generated/.gitkeep
+
+# Replit / editor noise
+.replit.nix
+.upm/
+.cache/
+
+# OS files
+.DS_Store
+Thumbs.db
