@@ -27,6 +27,7 @@ from services.db import (
     update_run_status,
 )
 from services.image_store import ImageStore
+from services.model_catalog import estimate_generation_cost, get_model_catalog
 
 load_dotenv()
 
@@ -38,20 +39,6 @@ image_store = ImageStore()
 executor = ThreadPoolExecutor(max_workers=3)
 jobs: dict[str, dict[str, Any]] = {}
 jobs_lock = Lock()
-
-DEFAULT_MODELS = {
-    "venice": [
-        {"id": "fluently-xl", "label": "Fluently XL", "notes": "Good first Venice test model if available on your account."},
-        {"id": "hidream", "label": "HiDream", "notes": "May require provider-specific sizing fields."},
-        {"id": "qwen-image", "label": "Qwen Image", "notes": "Useful to test after model refresh is added."},
-    ],
-    "fal": [
-        {"id": "fal-ai/flux/schnell", "label": "Flux Schnell", "notes": "Fast Fal starter model."},
-        {"id": "fal-ai/flux/dev", "label": "Flux Dev", "notes": "Higher-quality Flux option."},
-        {"id": "fal-ai/qwen-image", "label": "Qwen Image", "notes": "General image model."},
-        {"id": "fal-ai/fast-sdxl", "label": "Fast SDXL", "notes": "Older SDXL-style fallback."},
-    ],
-}
 
 
 def provider_for(name: str):
@@ -99,6 +86,10 @@ def build_generation_request(data: dict[str, Any]) -> GenerationRequest:
     if not model:
         raise ValueError("Model is required.")
 
+    raw_settings = dict(data.get("raw_settings") or {})
+    if data.get("resolution"):
+        raw_settings["resolution"] = data.get("resolution")
+
     return GenerationRequest(
         provider=provider,
         model=model,
@@ -111,7 +102,7 @@ def build_generation_request(data: dict[str, Any]) -> GenerationRequest:
         seed=parse_int_or_none(data.get("seed")),
         output_format=(data.get("output_format") or "jpeg").strip().lower(),
         safety=bool(data.get("safety", True)),
-        raw_settings=data.get("raw_settings") or {},
+        raw_settings=raw_settings,
     )
 
 
@@ -152,7 +143,14 @@ def api_providers():
 
 @app.get("/api/models")
 def api_models():
-    return jsonify(DEFAULT_MODELS)
+    include_disabled = request.args.get("include_disabled") == "1"
+    return jsonify(get_model_catalog(include_disabled=include_disabled))
+
+
+@app.post("/api/estimate")
+def api_estimate():
+    data = request.get_json(silent=True) or {}
+    return jsonify({"estimate": estimate_generation_cost(data)})
 
 
 @app.get("/api/history")
