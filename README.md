@@ -17,6 +17,9 @@ This repo is intentionally separate from VeniceChat. The goal is a small, inspec
 - [x] Added a basic async job system with polling.
 - [x] Added `.env.example` for API keys.
 - [x] Added Phase 2 gallery workflow basics: favorites, delete image/run, rerun, vary, load old run, download links, and metadata panels.
+- [x] Added static model/pricing catalog with model notes and cost estimates.
+- [x] Added live provider metadata/pricing refresh into `data/model_cache.json`.
+- [ ] Test live model/pricing refresh in Replit with real API keys.
 - [ ] Test Phase 2 actions in Replit with real generated images.
 - [ ] Adjust model defaults after seeing which models you like best.
 
@@ -29,15 +32,16 @@ This repo is intentionally separate from VeniceChat. The goal is a small, inspec
 - Use one normalized request shape internally, then translate it into provider-specific requests.
 - Start with prompt-to-image only. Editing, upscaling, and background removal can come later.
 - Do not optimize primarily for huge batches or ultra-fast iteration yet. The app should support batches, but the main priority is a clean wrapper and a good foundation.
+- Keep local human-written model notes in `services/model_catalog.py`, and save live provider metadata/pricing in ignored runtime file `data/model_cache.json`.
 
 ### Decisions Josie may need to make later
 
 - Whether this app should stay private or be deployed publicly.
 - Which provider should be the default: Venice.ai or Fal.ai.
 - Which models should appear at the top of the dropdown.
-- Whether to track estimated cost per generation.
+- Whether to track actual cost per completed generation in history.
 - Whether to add prompt enhancement using a text model.
-- Whether to support image editing/inpainting next, or model management/cost tracking next.
+- Whether to support image editing/inpainting next, or model browser/cost analytics next.
 - Whether to add a phone-friendly patch/fetch helper later, similar to VeniceChat, or keep this project simpler.
 
 ## Setup
@@ -57,7 +61,7 @@ VENICE_API_KEY=your_venice_key_here
 FAL_KEY=your_fal_key_here
 ```
 
-The app will start without keys, but provider calls will fail until the relevant key is present.
+The app will start without keys, but provider calls and live model/pricing refresh will fail until the relevant key is present.
 
 ### 3. Run the app
 
@@ -66,6 +70,28 @@ python main.py
 ```
 
 Then open the Replit web preview.
+
+### 4. Refresh model/pricing data
+
+In the app, click:
+
+```text
+Refresh model/pricing data
+```
+
+This calls:
+
+```text
+POST /api/models/refresh
+```
+
+The app saves live provider metadata/pricing to:
+
+```text
+data/model_cache.json
+```
+
+That file is ignored by Git because it is runtime/account-specific cache data.
 
 ## First test prompts
 
@@ -113,18 +139,23 @@ For debugging, use one image at a time first. After a provider works, try 2 or 4
 
 ### Phase 3 — Model management
 
-- [ ] Fetch Venice image models from the models endpoint
+- [x] Static model catalog with provider-specific notes
+- [x] Live Fal pricing refresh route
+- [x] Live Venice image model metadata refresh route
+- [x] Persistent runtime cache at `data/model_cache.json`
+- [x] UI button for refreshing model/pricing data
+- [x] Merge live cache into `/api/models`
 - [ ] Fetch Venice image styles from the styles endpoint
-- [ ] Decide how much Fal model metadata to cache
+- [ ] Add a proper model browser/table view
 - [ ] Mark models with simple labels like fast, quality, edit, cheap, experimental
-- [ ] Hide advanced or broken models from the normal dropdown
-- [ ] Add a short notes field per model
+- [ ] Tune/hide models after real-world testing
 
 ### Phase 4 — Cost awareness
 
-- [ ] Store estimated cost metadata when available
-- [ ] Show a pre-generation cost estimate if the provider supports it
-- [ ] Track total runs per provider/model
+- [x] Show pre-generation cost estimate when pricing metadata is available
+- [ ] Store estimated cost on each run
+- [ ] Store actual cost when provider response exposes enough billing data
+- [ ] Track total runs/spend by provider/model
 - [ ] Add a simple monthly usage page
 
 ### Phase 5 — Editing and post-processing
@@ -162,10 +193,12 @@ For debugging, use one image at a time first. After a provider works, try 2 or 4
 - Do not add chat/memory/summarization features unless there is a clear need.
 - When provider validation fails, save the raw error text in the run record so it can be debugged later.
 - Deleting images/runs removes the saved local generated file if it is under `static/generated/`.
+- Do not commit `data/model_cache.json`; it is runtime/account-specific cache data.
 
 ## Known limitations of this starter version
 
-- Fal model schemas vary. The current Fal adapter uses a common prompt/image-size/seed/num_images style payload, but some models may need special mapping.
-- Venice model sizing rules vary. The current Venice adapter supports aspect ratio, width/height, seed, negative prompt, variants, and format, but some models may require additional sizing fields.
+- Fal model schemas vary. The current Fal adapter supports `image_size` and `aspect_ratio` payload styles, but some models may need special mapping.
+- Venice model sizing rules vary. The current Venice adapter supports aspect ratio, width/height, seed, negative prompt, variants, format, and resolution tiers for cataloged resolution-tier models.
+- Live pricing refresh depends on provider API keys and provider endpoint behavior. Some models may still return unknown/range pricing.
 - Jobs are tracked in memory while running. Completed history is stored in SQLite, but if the server restarts mid-generation, the in-progress job status may be lost.
 - There is no authentication. Keep the app private unless/until auth is added.
