@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Image Lab</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <header class="topbar">
+    <div>
+      <h1>Image Lab</h1>
+      <p>A small Fal.ai / Venice.ai image generation wrapper.</p>
+    </div>
+    <div id="provider-status" class="provider-status">Checking keys…</div>
+  </header>
+
+  <main class="layout">
+    <section class="panel controls-panel">
+      <form id="generate-form">
+        <label>
+          Prompt
+          <textarea id="prompt" name="prompt" rows="6" required placeholder="Describe the image you want..."></textarea>
+        </label>
+
+        <label>
+          Negative prompt
+          <textarea id="negative_prompt" name="negative_prompt" rows="3" placeholder="Optional: things to avoid..."></textarea>
+        </label>
+
+        <div class="grid two">
+          <label>
+            Provider
+            <select id="provider" name="provider">
+              <option value="venice">Venice.ai</option>
+              <option value="fal">Fal.ai</option>
+            </select>
+          </label>
+
+          <label>
+            Model
+            <select id="model" name="model"></select>
+          </label>
+        </div>
+
+        <details class="custom-model-box">
+          <summary>Use custom model ID</summary>
+          <label>
+            Custom model ID
+            <input id="custom_model" name="custom_model" placeholder="Example: fal-ai/flux/schnell">
+          </label>
+        </details>
+
+        <div class="grid three">
+          <label>
+            Images
+            <select id="count" name="count">
+              <option value="1">1</option>
+              <option value="2">2</option>
+              <option value="4">4</option>
+            </select>
+          </label>
+
+          <label>
+            Aspect ratio
+            <select id="aspect_ratio" name="aspect_ratio">
+              <option value="1:1">1:1 square</option>
+              <option value="16:9">16:9 landscape</option>
+              <option value="9:16">9:16 portrait</option>
+              <option value="4:3">4:3 landscape</option>
+              <option value="3:4">3:4 portrait</option>
+            </select>
+          </label>
+
+          <label>
+            Format
+            <select id="output_format" name="output_format">
+              <option value="jpeg">JPEG</option>
+              <option value="png">PNG</option>
+              <option value="webp">WebP</option>
+            </select>
+          </label>
+        </div>
+
+        <div class="grid three">
+          <label>
+            Width
+            <input id="width" name="width" type="number" min="64" step="8" placeholder="optional">
+          </label>
+
+          <label>
+            Height
+            <input id="height" name="height" type="number" min="64" step="8" placeholder="optional">
+          </label>
+
+          <label>
+            Seed
+            <input id="seed" name="seed" type="number" placeholder="random">
+          </label>
+        </div>
+
+        <label class="checkbox-row">
+          <input id="safety" name="safety" type="checkbox" checked>
+          Use provider safety setting when available
+        </label>
+
+        <button id="generate-button" type="submit">Generate</button>
+        <p id="form-help" class="help-text">Tip: leave width/height blank unless a model needs exact dimensions.</p>
+      </form>
+    </section>
+
+    <section class="panel output-panel">
+      <div class="section-heading">
+        <h2>Current Run</h2>
+        <span id="job-status" class="job-status">Idle</span>
+      </div>
+      <div id="current-run" class="image-grid empty">No generation yet.</div>
+
+      <div class="section-heading history-heading">
+        <h2>Recent Runs</h2>
+        <button id="refresh-history" type="button" class="secondary-button">Refresh</button>
+      </div>
+      <div id="history" class="history-list empty">No saved runs yet.</div>
+    </section>
+  </main>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
